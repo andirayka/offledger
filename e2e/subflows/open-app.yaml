@@ -1,0 +1,10 @@
+appId: dev.andirayka.offledger
+---
+# Fresh start: wipe app data, then open the dev build against our Metro.
+- stopApp
+- clearState
+- openLink: ${OPEN_URL}
+- extendedWaitUntil:
+    visible:
+      id: groups-empty
+    timeout: 30000

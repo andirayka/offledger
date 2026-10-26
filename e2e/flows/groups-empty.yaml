@@ -1,0 +1,10 @@
+appId: dev.andirayka.offledger
+name: groups-empty
+tags:
+  - groups
+---
+- runFlow: ../subflows/open-app.yaml
+- assertVisible: Groups
+- assertVisible: No groups yet
+- assertVisible: Create a group to start splitting expenses. Everything stays on this phone.
+- takeScreenshot: groups-empty

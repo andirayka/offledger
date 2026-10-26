@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "verify": "node scripts/verify.ts",
-    "verify:e2e": "node scripts/verify-e2e.ts",
+    "verify:e2e": "node scripts/e2e.ts all",
+    "e2e": "node scripts/e2e.ts",
     "typecheck": "pnpm -r --no-bail typecheck && tsc -p scripts",
     "lint": "oxlint",
     "fmt": "oxfmt && oxlint --fix",
