@@ -1,0 +1,25 @@
+{
+  "name": "offledger",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "verify": "node scripts/verify.ts",
+    "verify:e2e": "node scripts/verify-e2e.ts",
+    "typecheck": "pnpm -r --no-bail typecheck && tsc -p scripts",
+    "lint": "oxlint",
+    "fmt": "oxfmt && oxlint --fix",
+    "fmt:check": "oxfmt --check",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.89.0",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@9.11.0"
+}

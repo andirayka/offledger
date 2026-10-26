@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "import", "react", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.expo/**",
+    "apps/mobile/ios/**",
+    "apps/mobile/android/**"
+  ],
+  "overrides": [
+    {
+      "files": ["packages/core/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "react",
+                  "react-*",
+                  "react-native",
+                  "react-native-*",
+                  "expo",
+                  "expo-*",
+                  "@expo/*",
+                  "@react-native/*"
+                ],
+                "message": "packages/core must stay pure TypeScript so its tests run in under a second. Move this code to apps/mobile and pass plain data into core instead."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off",
+    "import/no-named-as-default-member": "off",
+    "react/style-prop-object": "off"
+  }
+}
