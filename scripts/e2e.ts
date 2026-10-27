@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -15,31 +16,36 @@ const APP_DIR = join(ROOT, 'apps/mobile');
 const STATE_DIR = join(ROOT, '.e2e');
 const ARTIFACTS = join(ROOT, 'artifacts/e2e');
 const FLOWS = join(ROOT, 'e2e/flows');
-const SIM_NAME = 'Offledger iPhone 16';
-const SIM_TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPhone-16';
-const BUNDLE_ID = 'dev.andirayka.offledger';
+const APK = join(APP_DIR, 'android/app/build/outputs/apk/debug/app-debug.apk');
+const APP_ID = 'dev.andirayka.offledger';
 const PORT = Number(process.env.OFFLEDGER_METRO_PORT ?? 8090);
 const OPEN_URL = `exp+offledger://?__expo_url=${encodeURIComponent(`http://localhost:${PORT}`)}&__expo_disable_fab=1&__expo_disable_auto_launch=1&__expo_disable_onboarding=1`;
-const UTF8 = { LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8' };
+const ANDROID_HOME = process.env.ANDROID_HOME ?? join(homedir(), 'Library/Android/sdk');
+const JAVA_HOME = process.env.JAVA_HOME ?? join(homedir(), '.sdkman/candidates/java/current');
+const ENV = { LANG: 'en_US.UTF-8', LC_ALL: 'en_US.UTF-8', ANDROID_HOME, JAVA_HOME };
 
-const HELP = `Usage: pnpm -s e2e <command> [options]
+const HELP = `Usage: pnpm -s e2e <command> --serial <adb-serial> [options]
 
-Drives the Offledger dev build on its own iOS simulator ("${SIM_NAME}") with Maestro.
+Drives the Offledger debug build on an already running Android emulator with Maestro.
+This tool never boots, picks, or shuts down an emulator: the device and its serial come from
+whoever granted it (see AGENTS.md). Pass --serial or set OFFLEDGER_ANDROID_SERIAL.
 Every command prints one JSON object on stdout and exits non-zero on failure.
 
 Commands:
-  doctor              Read-only: is the simulator booted, the app installed, Metro ours and serving?
-  launch [--build]    Boot the simulator, start Metro on :${PORT}, open the app, wait until the
-                      Groups screen renders. --build rebuilds and reinstalls the native app first
-                      (needed after adding a native package or changing app.json).
+  doctor              Read-only: is the device online, the app installed, Metro ours, serving,
+                      watching files, and reachable from the device (adb reverse)?
+  launch [--build]    Start Metro on :${PORT}, reverse the port to the device, open the app, and
+                      wait until the Groups screen renders. --build rebuilds and reinstalls the
+                      APK first (needed after adding a native package or changing app.json).
   run [flow...]       Run Maestro flows from e2e/flows (default: all). Evidence goes to
                       artifacts/e2e/<run-id>/ and survives cleanup.
-  cleanup             Stop the Metro this tool started and terminate the app. Keeps evidence and
-                      leaves the simulator booted (pass --shutdown to stop it, only if we booted it).
+  cleanup             Stop the Metro this tool started, force-stop the app, remove the port
+                      reverse. Keeps evidence. Leaves the emulator running.
 
-pnpm -s verify:e2e  = launch, run all flows, cleanup.`;
+pnpm -s verify:e2e --serial <s>  = launch, run all flows, cleanup.`;
 
 type Json = Record<string, unknown>;
+type State = { metroPid?: number; serial?: string };
 
 function out(result: Json, ok: boolean): never {
   console.log(JSON.stringify({ ok, ...result }, null, 2));
@@ -56,38 +62,53 @@ function withoutCi(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return rest;
 }
 
-function sh(cmd: string, args: string[]) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', env: { ...process.env, ...UTF8 } });
+function sh(cmd: string, args: string[], cwd = ROOT) {
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', env: { ...process.env, ...ENV } });
   return { code: r.status ?? 1, stdout: r.stdout ?? '', stderr: r.stderr ?? '' };
 }
 
-function findSimulator(): { udid: string; state: string } | undefined {
-  const list = JSON.parse(sh('xcrun', ['simctl', 'list', 'devices', '-j']).stdout) as {
-    devices: Record<string, { name: string; udid: string; state: string; isAvailable: boolean }[]>;
-  };
-  for (const devices of Object.values(list.devices)) {
-    const sim = devices.find((d) => d.name === SIM_NAME && d.isAvailable);
-    if (sim) return { udid: sim.udid, state: sim.state };
+const ADB = join(ANDROID_HOME, 'platform-tools/adb');
+const adb = (serial: string, args: string[]) => sh(ADB, ['-s', serial, ...args]);
+
+function serialArg(args: string[]): string | undefined {
+  const i = args.indexOf('--serial');
+  return (i === -1 ? undefined : args[i + 1]) ?? process.env.OFFLEDGER_ANDROID_SERIAL;
+}
+
+function onlineDevices(): string[] {
+  return sh(ADB, ['devices'])
+    .stdout.split('\n')
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([id, state]) => id && state === 'device')
+    .map(([id]) => id as string);
+}
+
+function requireDevice(serial: string | undefined): string {
+  const online = onlineDevices();
+  if (!serial) {
+    fail(
+      'No device serial given.',
+      'Pass --serial <adb-serial> for the emulator you were granted, or set OFFLEDGER_ANDROID_SERIAL.',
+      { onlineDevices: online },
+    );
   }
-  return undefined;
+  if (!online.includes(serial)) {
+    fail(
+      `Device ${serial} is not online.`,
+      'Ask for the emulator to be started, then re-check the serial with `adb devices`.',
+      { onlineDevices: online },
+    );
+  }
+  return serial;
 }
 
-function newestIosRuntime(): string | undefined {
-  const runtimes = JSON.parse(sh('xcrun', ['simctl', 'list', 'runtimes', '-j']).stdout) as {
-    runtimes: { identifier: string; platform: string; isAvailable: boolean; version: string }[];
-  };
-  return runtimes.runtimes
-    .filter((r) => r.platform === 'iOS' && r.isAvailable)
-    .toSorted((a, b) => b.version.localeCompare(a.version, undefined, { numeric: true }))[0]
-    ?.identifier;
-}
-
-function readState(): { metroPid?: number; bootedByUs?: boolean } {
+function readState(): State {
   const file = join(STATE_DIR, 'state.json');
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
 }
 
-function writeState(state: { metroPid?: number; bootedByUs?: boolean }) {
+function writeState(state: State) {
   mkdirSync(STATE_DIR, { recursive: true });
   writeFileSync(join(STATE_DIR, 'state.json'), JSON.stringify(state));
 }
@@ -103,8 +124,11 @@ function isAlive(pid: number | undefined): pid is number {
 }
 
 function portOwner(): number | undefined {
-  const r = sh('lsof', ['-nP', `-iTCP:${PORT}`, '-sTCP:LISTEN', '-t']);
-  const pid = Number(r.stdout.trim().split('\n')[0]);
+  const pid = Number(
+    sh('lsof', ['-nP', `-iTCP:${PORT}`, '-sTCP:LISTEN', '-t'])
+      .stdout.trim()
+      .split('\n')[0],
+  );
   return Number.isFinite(pid) && pid > 0 ? pid : undefined;
 }
 
@@ -128,41 +152,63 @@ async function metroStatus(): Promise<string | undefined> {
   }
 }
 
-function appInstalled(udid: string) {
-  return sh('xcrun', ['simctl', 'get_app_container', udid, BUNDLE_ID]).code === 0;
-}
+const appInstalled = (serial: string) =>
+  adb(serial, ['shell', 'pm', 'path', APP_ID]).stdout.includes('package:');
+const portReversed = (serial: string) =>
+  adb(serial, ['reverse', '--list']).stdout.includes(`tcp:${PORT}`);
 
-async function doctor() {
-  const sim = findSimulator();
+async function doctor(serial: string | undefined) {
+  const online = onlineDevices();
+  const deviceOnline = Boolean(serial && online.includes(serial));
   const state = readState();
   const owner = portOwner();
   const ours =
     isAlive(state.metroPid) &&
     owner !== undefined &&
     [state.metroPid, ...descendants(state.metroPid)].includes(owner);
+  const watching =
+    ours && !readFileSync(join(STATE_DIR, 'metro.log'), 'utf8').includes('reloads are disabled');
   const report = {
-    simulator: sim ? { name: SIM_NAME, ...sim } : null,
-    appInstalled: sim ? appInstalled(sim.udid) : false,
+    device: {
+      serial: serial ?? null,
+      online: deviceOnline,
+      avd:
+        deviceOnline && serial
+          ? (adb(serial, ['emu', 'avd', 'name']).stdout.split('\n')[0]?.trim() ?? null)
+          : null,
+      onlineDevices: online,
+    },
+    appInstalled: deviceOnline && serial ? appInstalled(serial) : false,
     metro: {
       port: PORT,
       status: (await metroStatus()) ?? null,
       ownedByThisTool: ours,
+      watchingFiles: watching,
       listenerPid: owner ?? null,
     },
+    portReversed: deviceOnline && serial ? portReversed(serial) : false,
     maestro: sh('maestro', ['--version']).stdout.trim().split('\n').at(-1) ?? null,
   };
   const problems = [
-    !sim && `Simulator "${SIM_NAME}" does not exist. Run \`pnpm -s e2e launch --build\`.`,
-    sim && sim.state !== 'Booted' && 'Simulator is not booted. Run `pnpm -s e2e launch`.',
-    sim && !report.appInstalled && 'App is not installed. Run `pnpm -s e2e launch --build`.',
+    !serial &&
+      'No device serial given. Pass --serial <adb-serial> for the emulator you were granted.',
+    serial &&
+      !deviceOnline &&
+      `Device ${serial} is not online. Ask for the emulator to be started; never start one yourself.`,
+    deviceOnline &&
+      !report.appInstalled &&
+      'App is not installed. Run `pnpm -s e2e launch --build --serial <s>`.',
     report.metro.status !== 'packager-status:running' &&
-      `Metro is not serving on :${PORT}. Run \`pnpm -s e2e launch\`.`,
+      `Metro is not serving on :${PORT}. Run \`pnpm -s e2e launch --serial <s>\`.`,
     report.metro.status &&
       !ours &&
       `Port ${PORT} is served by a process this tool did not start (pid ${owner}). Do not drive it; stop it or set OFFLEDGER_METRO_PORT.`,
     ours &&
-      readFileSync(join(STATE_DIR, 'metro.log'), 'utf8').includes('reloads are disabled') &&
+      !watching &&
       'Metro is not watching files, so runs would test stale code. Run `pnpm -s e2e cleanup`, then `pnpm -s e2e launch`.',
+    deviceOnline &&
+      !report.portReversed &&
+      `Port ${PORT} is not reversed to the device. Run \`pnpm -s e2e launch --serial <s>\`.`,
     !report.maestro &&
       'Maestro is not installed: https://docs.maestro.dev/getting-started/installing-maestro',
   ].filter(Boolean);
@@ -178,46 +224,40 @@ async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: numbe
   return false;
 }
 
-async function launch(build: boolean) {
-  let sim = findSimulator();
-  if (!sim) {
-    const runtime = newestIosRuntime();
-    if (!runtime)
+function buildApk() {
+  mkdirSync(STATE_DIR, { recursive: true });
+  const log = join(STATE_DIR, 'build.log');
+  const prebuild = sh(
+    'pnpm',
+    ['exec', 'expo', 'prebuild', '-p', 'android', '--no-install'],
+    APP_DIR,
+  );
+  const gradle =
+    prebuild.code === 0
+      ? sh('./gradlew', ['app:assembleDebug', '--console=plain'], join(APP_DIR, 'android'))
+      : undefined;
+  writeFileSync(log, [prebuild.stdout, prebuild.stderr, gradle?.stdout, gradle?.stderr].join('\n'));
+  if (prebuild.code !== 0 || gradle?.code !== 0) {
+    fail(
+      'Android build failed.',
+      `Read ${log}; the first "FAILURE:" or "error:" line is the cause.`,
+    );
+  }
+}
+
+async function launch(serial: string, build: boolean) {
+  if (build || !existsSync(APK)) buildApk();
+  if (build || !appInstalled(serial)) {
+    const r = adb(serial, ['install', '-r', APK]);
+    if (r.code !== 0)
       fail(
-        'No iOS simulator runtime is installed.',
-        'Install one with `xcodebuild -downloadPlatform iOS`.',
-      );
-    sh('xcrun', ['simctl', 'create', SIM_NAME, SIM_TYPE, runtime]);
-    sim = findSimulator();
-    if (!sim)
-      fail(
-        `Could not create simulator "${SIM_NAME}".`,
-        'Run `xcrun simctl list devicetypes` and check iPhone 16 exists.',
+        'APK install failed.',
+        'Read the adb output; free space on the device or uninstall a conflicting signature.',
+        { adb: r.stderr || r.stdout },
       );
   }
+
   const state = readState();
-  if (sim.state !== 'Booted') {
-    sh('xcrun', ['simctl', 'boot', sim.udid]);
-    sh('xcrun', ['simctl', 'bootstatus', sim.udid, '-b']);
-    state.bootedByUs = true;
-  }
-  sh('open', ['-a', 'Simulator']);
-
-  if (build || !appInstalled(sim.udid)) {
-    const r = spawnSync('pnpm', ['exec', 'expo', 'run:ios', '--device', sim.udid, '--no-bundler'], {
-      cwd: APP_DIR,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      encoding: 'utf8',
-      env: { ...process.env, ...UTF8, CI: '1' },
-    });
-    if (r.status !== 0) {
-      const log = join(STATE_DIR, 'build.log');
-      mkdirSync(STATE_DIR, { recursive: true });
-      writeFileSync(log, `${r.stdout}\n${r.stderr}`);
-      fail('Native build failed.', `Read ${log}; the first "error:" line is the cause.`);
-    }
-  }
-
   const owner = portOwner();
   if (!isAlive(state.metroPid) || owner === undefined) {
     if (owner !== undefined) {
@@ -232,36 +272,38 @@ async function launch(build: boolean) {
       cwd: APP_DIR,
       detached: true,
       stdio: ['ignore', log, log],
-      env: { ...withoutCi(process.env), ...UTF8 },
+      env: { ...withoutCi(process.env), ...ENV },
     });
     metro.unref();
     state.metroPid = metro.pid;
   }
+  state.serial = serial;
   writeState(state);
   if (!(await waitFor(async () => (await metroStatus()) === 'packager-status:running', 60_000))) {
     fail('Metro did not start within 60s.', `Read ${join(STATE_DIR, 'metro.log')}.`);
   }
+  adb(serial, ['reverse', `tcp:${PORT}`, `tcp:${PORT}`]);
 
   const ready = maestro(
-    sim.udid,
+    serial,
     [join(ROOT, 'e2e/subflows/open-app.yaml')],
     join(STATE_DIR, 'ready'),
   );
   if (!ready.ok) {
     fail(
       'App opened but the Groups screen never rendered.',
-      `Read ${join(STATE_DIR, 'metro.log')} for a red-box error, then \`pnpm -s e2e doctor\`.`,
+      `Read ${join(STATE_DIR, 'metro.log')} for a red-box error and the screenshot in ${join(STATE_DIR, 'ready')}, then \`pnpm -s e2e doctor\`.`,
       { maestro: ready.tail },
     );
   }
-  return { simulator: sim.udid, metroPid: state.metroPid, port: PORT, ready: true };
+  return { serial, metroPid: state.metroPid, port: PORT, ready: true };
 }
 
-function maestro(udid: string, flows: string[], outputDir: string) {
+function maestro(serial: string, flows: string[], outputDir: string) {
   mkdirSync(outputDir, { recursive: true });
   const r = sh('maestro', [
     '--device',
-    udid,
+    serial,
     'test',
     '-e',
     `OPEN_URL=${OPEN_URL}`,
@@ -279,10 +321,7 @@ function maestro(udid: string, flows: string[], outputDir: string) {
   };
 }
 
-function run(names: string[]) {
-  const sim = findSimulator();
-  if (!sim || sim.state !== 'Booted')
-    fail('Simulator is not running.', 'Run `pnpm -s e2e launch` first.');
+function run(serial: string, names: string[]) {
   const all = readdirSync(FLOWS)
     .filter((f) => f.endsWith('.yaml'))
     .toSorted();
@@ -295,14 +334,14 @@ function run(names: string[]) {
   const runId = new Date().toISOString().replace(/[:.]/g, '-');
   const dir = join(ARTIFACTS, runId);
   const result = maestro(
-    sim.udid,
+    serial,
     selected.map((f) => join(FLOWS, f)),
     dir,
   );
-  const files = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) =>
+  const screenshots = readdirSync(dir, { recursive: true, encoding: 'utf8' }).filter((f) =>
     f.endsWith('.png'),
   );
-  const report = { runId, flows: selected, evidence: dir, screenshots: files };
+  const report = { runId, serial, flows: selected, evidence: dir, screenshots };
   if (result.ok) return { ok: true, ...report };
   return {
     ok: false,
@@ -313,44 +352,51 @@ function run(names: string[]) {
   };
 }
 
-function cleanup(shutdown: boolean) {
+function cleanup() {
   const state = readState();
   const stopped: number[] = [];
   if (isAlive(state.metroPid)) {
-    const pids = [...descendants(state.metroPid).toReversed(), state.metroPid];
-    for (const pid of pids) {
+    for (const pid of [...descendants(state.metroPid).toReversed(), state.metroPid]) {
       try {
         process.kill(pid, 'SIGTERM');
         stopped.push(pid);
       } catch {}
     }
   }
-  const sim = findSimulator();
-  if (sim?.state === 'Booted') sh('xcrun', ['simctl', 'terminate', sim.udid, BUNDLE_ID]);
-  const shutDown = Boolean(shutdown && state.bootedByUs && sim);
-  if (shutDown && sim) sh('xcrun', ['simctl', 'shutdown', sim.udid]);
+  const serial = state.serial;
+  if (serial && onlineDevices().includes(serial)) {
+    adb(serial, ['shell', 'am', 'force-stop', APP_ID]);
+    adb(serial, ['reverse', '--remove', `tcp:${PORT}`]);
+  }
   rmSync(join(STATE_DIR, 'state.json'), { force: true });
-  return { stoppedPids: stopped, simulatorShutDown: shutDown, evidenceKept: ARTIFACTS };
+  return {
+    stoppedPids: stopped,
+    serial: serial ?? null,
+    emulatorLeftRunning: true,
+    evidenceKept: ARTIFACTS,
+  };
 }
 
 const [command, ...rest] = process.argv.slice(2);
+const flowArgs = rest.filter((a, i) => !a.startsWith('--') && rest[i - 1] !== '--serial');
 switch (command) {
   case 'doctor': {
-    const report = await doctor();
+    const report = await doctor(serialArg(rest));
     out(report, report.problems.length === 0);
   }
   case 'launch':
-    out(await launch(rest.includes('--build')), true);
+    out(await launch(requireDevice(serialArg(rest)), rest.includes('--build')), true);
   case 'run': {
-    const { ok, ...report } = run(rest);
+    const { ok, ...report } = run(requireDevice(serialArg(rest)), flowArgs);
     out(report, ok);
   }
   case 'cleanup':
-    out(cleanup(rest.includes('--shutdown')), true);
+    out(cleanup(), true);
   case 'all': {
-    process.on('exit', () => cleanup(false));
-    await launch(rest.includes('--build'));
-    const { ok, ...report } = run([]);
+    const serial = requireDevice(serialArg(rest));
+    process.on('exit', () => cleanup());
+    await launch(serial, rest.includes('--build'));
+    const { ok, ...report } = run(serial, []);
     out(report, ok);
   }
   default:

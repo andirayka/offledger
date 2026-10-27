@@ -4,13 +4,13 @@ The maintained source for verifying Offledger's user-facing behaviour. Read this
 
 ## Baseline preconditions
 
-- `pnpm -s e2e doctor` returns `"ok": true`.
+- A granted emulator serial, confirmed with `adb -s <serial> emu avd name`, and `pnpm -s e2e doctor --serial <serial>` returns `"ok": true`.
 - Every journey starts from empty app data: `e2e/subflows/open-app.yaml` clears state and lands on the Groups screen.
 - No seed data exists yet. A journey that needs groups or expenses creates them through the UI.
 
 ## Driving conventions
 
-- Drive through `pnpm -s e2e run <flow>`; flows live in `e2e/flows/`, named after the feature file and sub-feature.
+- Drive through `pnpm -s e2e run <flow> --serial <serial>`; flows live in `e2e/flows/`, named after the feature file and sub-feature.
 - Select by `testID` (`id:` in Maestro), then exact visible text. No coordinates.
 - Money is entered and asserted as the user sees it (`12.50`), never as cents.
 

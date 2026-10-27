@@ -1,6 +1,6 @@
 # offledger
 
-An offline-first expense splitter for iOS and Android, built with Expo and React Native.
+An offline-first expense splitter for Android, built with Expo and React Native.
 
 Split trips, dinners, and rent with friends. No server and no accounts: every phone keeps its own copy, and two phones merge by sending each other a `.ledger` file. Nothing gets overwritten or lost.
 
@@ -16,7 +16,7 @@ Split trips, dinners, and rent with friends. No server and no accounts: every ph
 ```sh
 pnpm install
 pnpm -s verify          # fast loop: format, lint, typecheck, property tests
-pnpm --filter @offledger/mobile ios   # dev build on the iOS simulator
+pnpm --filter @offledger/mobile android   # dev build on a running Android emulator
 ```
 
 ## Status

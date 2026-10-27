@@ -1,6 +1,6 @@
 # offledger
 
-Offline-first expense splitter for React Native (Expo SDK 58 dev build). No server, no accounts: each phone keeps an event log, and phones merge logs by exchanging a `.ledger` file.
+Offline-first expense splitter for Android, built with React Native (Expo SDK 58 dev build). Android only: there is no iOS target. No server, no accounts: each phone keeps an event log, and phones merge logs by exchanging a `.ledger` file.
 
 ## Layout
 
@@ -12,7 +12,7 @@ Offline-first expense splitter for React Native (Expo SDK 58 dev build). No serv
 ## Commands
 
 - `pnpm -s verify`: format, lint, typecheck, core tests in about 2 seconds. Run it every cycle. `--json` for machine output, `--only lint,test` to narrow, `--help` for more.
-- `pnpm -s verify:e2e`: Maestro journeys on the iOS simulator. Run before calling a UI ticket done.
+- `pnpm -s verify:e2e --serial <adb-serial>`: Maestro journeys on an Android emulator. Run before calling a UI ticket done. Emulators are shared: get a grant and its serial first (see the user-level AGENTS.md), and never boot, wipe, or shut one down yourself.
 - `pnpm fmt`: apply formatting and safe lint fixes.
 - Add native or Expo packages with `pnpm expo install <pkg>` inside `apps/mobile`.
 

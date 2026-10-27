@@ -7,10 +7,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "ios": {
-      "supportsTablet": false,
-      "bundleIdentifier": "dev.andirayka.offledger"
-    },
     "android": {
       "package": "dev.andirayka.offledger",
       "adaptiveIcon": {
@@ -24,6 +20,7 @@
     "plugins": ["expo-router"],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "platforms": ["android"]
   }
 }
