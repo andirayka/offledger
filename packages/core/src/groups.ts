@@ -9,7 +9,9 @@ export type Group = {
 export function deriveGroups(events: readonly LedgerEvent[]): Group[] {
   const seen = new Set<string>();
   const groups: Group[] = [];
-  for (const event of events.toSorted(compareLogOrder)) {
+  // Hermes (React Native 0.88) has no Array#toSorted, so sort a copy instead.
+  // oxlint-disable-next-line unicorn/no-array-sort
+  for (const event of [...events].sort(compareLogOrder)) {
     if (seen.has(event.id)) continue;
     seen.add(event.id);
     groups.push({ id: event.groupId, name: event.name, createdAt: event.at });
