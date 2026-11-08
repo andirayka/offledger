@@ -13,6 +13,7 @@ tags:
 - assertVisible: Bali trip
 - stopApp
 - openLink: ${OPEN_URL}
+# Same cold-start allowance as open-app.yaml: the dev client re-fetches the bundle on every launch.
 - extendedWaitUntil:
     visible: Bali trip
-    timeout: 30000
+    timeout: 60000

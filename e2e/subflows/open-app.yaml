@@ -4,7 +4,16 @@ appId: dev.andirayka.offledger
 - stopApp
 - clearState
 - openLink: ${OPEN_URL}
+# A cold dev-client start downloads and parses the dev bundle, which measured 35-60s on a shared
+# emulator. The wait covers that, not app slowness: the assert still has to see the empty state.
 - extendedWaitUntil:
     visible:
       id: groups-empty
-    timeout: 30000
+    timeout: 60000
+# clearState also wipes the dev menu preferences, so its onboarding sheet can open over the app.
+# Dismiss it when it shows; it is dev-build chrome, and the form underneath must be tappable.
+- runFlow:
+    when:
+      visible: This is the developer menu
+    commands:
+      - tapOn: Continue
