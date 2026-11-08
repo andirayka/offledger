@@ -1,0 +1,18 @@
+appId: dev.andirayka.offledger
+name: create-group
+tags:
+  - groups
+---
+- runFlow: ../subflows/open-app.yaml
+- assertVisible: No groups yet
+- tapOn:
+    id: group-name-input
+- inputText: Bali trip
+- tapOn:
+    id: create-group
+- assertVisible: Bali trip
+- stopApp
+- openLink: ${OPEN_URL}
+- extendedWaitUntil:
+    visible: Bali trip
+    timeout: 30000
