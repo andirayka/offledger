@@ -20,22 +20,15 @@ Offline-first expense splitter for Android, built with React Native (Expo SDK 58
 
 - Write the check first and watch it fail for the right reason, then make it pass. A ticket is done when its named proof (property, journey, or differential test) passes, with the red and green runs shown.
 - Fix the code, not the check. Never weaken a property or journey to get green.
-- Money is integer minor units, always.
+- Money is an integer count of minor units (cents), always. A float that touches money is a hard violation, and so is any division whose remainder isn't handed to an `allocate()`-style function that provably preserves the total.
+- Ledger state is derived from events. Code that mutates derived state (balances, totals) directly instead of appending an event is a hard violation. Events are never deleted or rewritten; deletion is a new event.
+- `packages/core` is pure TypeScript: no React, React Native, Expo, I/O, clock, or randomness. Time and IDs enter core as arguments. The app talks to core only through `packages/core/src/index.ts`.
+- Parse external data (imported `.ledger` files, SQLite rows) at the boundary into core types; core does not re-validate trusted internal data.
 
-## Agent skills
+## Workflow
 
-### Issue tracker
+Development here runs through [pstack](https://github.com/cursor/plugins/tree/main/pstack) (Lauren Tan's engineering skill pack, installed as a personal Amp plugin). Start nontrivial work with `/poteto-mode`; it routes to a playbook (feature, bug fix, refactor, investigation, etc.), opens a todolist, and applies pstack's principles (verification-first, model the domain, no planning theatre). See `pstack:AMP.md` for how Cursor-specific pstack concepts map to Amp.
 
-Work is tracked in the private Beads store `ledg` at `~/beads/ledger`; prefix every `bd` command with `BEADS_DIR="$HOME/beads/ledger/.beads"`. See `docs/agents/issue-tracker.md`.
+No separate issue tracker or triage labels: pstack's own playbooks and todolists carry task state. Create a `GLOSSARY.md` and `docs/adr/` lazily, the first time a term or decision actually needs recording, via pstack's domain-modeling-equivalent work — don't scaffold them upfront.
 
-### Triage labels
-
-The five default triage roles, applied as Beads labels. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
-
-### Coding standards
-
-For reviewers only. See `docs/agents/coding-standards.md`.
+Project verification lives wherever `/create-verification-skill` places it next (regenerating `.agents/skills/verify-offledger`); keep using `pnpm -s verify` and `pnpm -s verify:e2e` as the underlying checks either way.
