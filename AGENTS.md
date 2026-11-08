@@ -29,6 +29,10 @@ Offline-first expense splitter for Android, built with React Native (Expo SDK 58
 
 Development here runs through [pstack](https://github.com/cursor/plugins/tree/main/pstack) (Lauren Tan's engineering skill pack, installed as a personal Amp plugin). Start nontrivial work with `/poteto-mode`; it routes to a playbook (feature, bug fix, refactor, investigation, etc.), opens a todolist, and applies pstack's principles (verification-first, model the domain, no planning theatre). See `pstack:AMP.md` for how Cursor-specific pstack concepts map to Amp.
 
+### Delivery
+
+Andi is the only contributor: no PRs. Work on a feature branch in a treehouse slot, then merge it into `main` and push once its named proof passes. CI still runs on `main`.
+
 ### Where progress lives
 
 No external tracker, no triage labels, no Beads tasks. Progress is three things:
