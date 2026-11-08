@@ -29,6 +29,18 @@ Offline-first expense splitter for Android, built with React Native (Expo SDK 58
 
 Development here runs through [pstack](https://github.com/cursor/plugins/tree/main/pstack) (Lauren Tan's engineering skill pack, installed as a personal Amp plugin). Start nontrivial work with `/poteto-mode`; it routes to a playbook (feature, bug fix, refactor, investigation, etc.), opens a todolist, and applies pstack's principles (verification-first, model the domain, no planning theatre). See `pstack:AMP.md` for how Cursor-specific pstack concepts map to Amp.
 
-No separate issue tracker or triage labels: pstack's own playbooks and todolists carry task state. Create a `GLOSSARY.md` and `docs/adr/` lazily, the first time a term or decision actually needs recording, via pstack's domain-modeling-equivalent work — don't scaffold them upfront.
+### Where progress lives
+
+No external tracker, no triage labels, no Beads tasks. Progress is three things:
+
+- The matched playbook's todolist, kept as a checklist in replies and ticked as each box is proven.
+- For work spanning phases or PRs, a `show-me-your-work` TSV at `.amp/in/decisions.tsv` (local, not committed) plus the `phase-tracker` page in the side panel.
+- The durable record: branch, commits, and PR description carrying the red and green runs.
+
+Create a `GLOSSARY.md` and `docs/adr/` lazily, the first time a term or decision actually needs recording, via pstack's domain-modeling-equivalent work — don't scaffold them upfront.
+
+### This is Andi's pstack learning project
+
+Andi is learning pstack here, so show the method, not only the result. Before starting, say which playbook you matched and why, and name each principle you apply with the choice it changed. Keep the playbook todolist visible in replies. At a genuine product or preference fork, show the options with their practical impact and ask with `ask_user_choice`; if a run could settle it, run it instead of asking. Hand back at each verifiable unit instead of running the whole feature unattended.
 
 Project verification lives wherever `/create-verification-skill` places it next (regenerating `.agents/skills/verify-offledger`); keep using `pnpm -s verify` and `pnpm -s verify:e2e` as the underlying checks either way.
